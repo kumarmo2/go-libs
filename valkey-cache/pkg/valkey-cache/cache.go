@@ -2,6 +2,7 @@ package valkeycache
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"strconv"
 	"sync"
@@ -11,6 +12,8 @@ import (
 
 type ICache interface {
 	Get(key string) ([]byte, error)
+	Set(key string, value []byte) error
+	Expire(key string) error
 }
 
 type Cache struct {
@@ -23,6 +26,12 @@ type CacheConfig struct {
 	Host string
 	Port int
 }
+
+type Serializer func(T any) ([]byte, error)
+type Deserializer func(bytes []byte, T any) error
+
+var JsonSerializer Serializer = json.Marshal
+var JsonDeserializer Deserializer = json.Unmarshal
 
 func NewCache(config *CacheConfig) ICache {
 	host := "localhost"
@@ -69,4 +78,75 @@ func (c *Cache) Get(key string) ([]byte, error) {
 	}
 
 	return client.Do(context.Background(), client.B().Get().Key(key).Build()).AsBytes()
+}
+
+func (c *Cache) Set(key string, value []byte) error {
+	client, err := c.connectFunc()
+	if err != nil {
+		return err
+	}
+	res := client.Do(context.Background(), client.B().Set().Key(key).Value(string(value)).Build())
+	res.Error()
+	if res.Error() != nil {
+		return res.Error()
+	}
+	return nil
+
+}
+
+func SetAndGet[T any](cache ICache, key string, getter func() (T, error)) (T, error) {
+	unmarshelledValue, err := getter()
+	if err != nil {
+		log.Println("error while getting value from getter:", err)
+		var zero T
+		return zero, err
+	}
+	val, err := JsonSerializer(unmarshelledValue)
+	if err != nil {
+		log.Println("error while serializing value:", err)
+		var zero T
+		return zero, err
+	}
+	err = cache.Set(key, val)
+	if err != nil {
+		log.Println("error while setting value:", err)
+		var zero T
+		return zero, err
+	}
+	return unmarshelledValue, err
+}
+
+func (c *Cache) Expire(key string) error {
+	cache, err := c.connectFunc()
+	if err != nil {
+		return err
+	}
+	return cache.Do(context.Background(), cache.B().Expire().Key(key).Seconds(0).Build()).Error()
+}
+
+func GetOrSetAndGet[T any](cache ICache, key string, getter func() (T, error)) (T, error) {
+	val, err := cache.Get(key)
+	var unmarshelledValue T
+
+	if err == valkey.Nil {
+		log.Println("value not found in cache, getting from getter")
+		unmarshelledValue, err = SetAndGet(cache, key, getter)
+		if err != nil {
+			var zero T
+			return zero, err
+		}
+		return unmarshelledValue, nil
+	} else if err != nil {
+		log.Println("error while getting value from cache:", err)
+		var zero T
+		return zero, err
+	} else {
+		err = JsonDeserializer(val, &unmarshelledValue)
+		if err != nil {
+			log.Println("error while deserializing value:", err)
+			var zero T
+			return zero, err
+		}
+		return unmarshelledValue, nil
+	}
 }
