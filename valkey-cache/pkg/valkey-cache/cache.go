@@ -20,8 +20,8 @@ type Cache struct {
 }
 
 type CacheConfig struct {
-	Host *string
-	Port *int
+	Host string
+	Port int
 }
 
 func NewCache(config *CacheConfig) ICache {
@@ -35,12 +35,12 @@ func NewCache(config *CacheConfig) ICache {
 		conf = &CacheConfig{}
 	}
 
-	if conf.Host != nil {
-		host = *conf.Host
+	if conf.Host != "" {
+		host = conf.Host
 	}
 
-	if conf.Port != nil {
-		port = *conf.Port
+	if conf.Port != 0 {
+		port = conf.Port
 	}
 
 	connect := sync.OnceValues(func() (valkey.Client, error) {
