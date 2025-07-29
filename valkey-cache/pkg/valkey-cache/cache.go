@@ -129,7 +129,7 @@ func GetOrSetAndGet[T any](cache ICache, key string, getter func() (T, error)) (
 	var unmarshelledValue T
 
 	if err == valkey.Nil {
-		log.Println("value not found in cache, getting from getter")
+		log.Println("value not found in cache, getting from getter for key: ", key)
 		unmarshelledValue, err = SetAndGet(cache, key, getter)
 		if err != nil {
 			var zero T
