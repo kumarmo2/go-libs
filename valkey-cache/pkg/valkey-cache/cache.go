@@ -14,17 +14,20 @@ type ICache interface {
 	Get(key string) ([]byte, error)
 	Set(key string, value []byte) error
 	Expire(key string) error
+	UseCache() bool
 }
 
 type Cache struct {
 	host        string
 	port        int
 	connectFunc func() (valkey.Client, error)
+	config      *CacheConfig
 }
 
 type CacheConfig struct {
-	Host string
-	Port int
+	Host     string
+	Port     int
+	UseCache bool
 }
 
 type Serializer func(T any) ([]byte, error)
@@ -56,7 +59,11 @@ func NewCache(config *CacheConfig) ICache {
 		return connect(host, port)
 	})
 
-	return &Cache{host: host, port: port, connectFunc: connect}
+	return &Cache{host: host, port: port, connectFunc: connect, config: config}
+}
+
+func (c *Cache) UseCache() bool {
+	return c.config.UseCache
 }
 
 func connect(host string, port int) (valkey.Client, error) {
@@ -125,6 +132,11 @@ func (c *Cache) Expire(key string) error {
 }
 
 func GetOrSetAndGet[T any](cache ICache, key string, getter func() (T, error)) (T, error) {
+	if !cache.UseCache() {
+		log.Println("cache is not enabled, getting from getter, key: ", key)
+		return getter()
+	}
+
 	val, err := cache.Get(key)
 	var unmarshelledValue T
 
