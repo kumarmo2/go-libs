@@ -14,6 +14,7 @@ type ICache interface {
 	Get(key string) ([]byte, error)
 	Set(key string, value []byte) error
 	Expire(key string) error
+	ExpireKeys(ctx context.Context, keys []string) error
 	UseCache() bool
 }
 
@@ -62,12 +63,33 @@ func NewCache(config *CacheConfig) ICache {
 	return &Cache{host: host, port: port, connectFunc: connect, config: config}
 }
 
+func (c *Cache) ExpireKeys(ctx context.Context, keys []string) error {
+	client, err := c.connectFunc()
+	if err != nil {
+		return err
+	}
+	cmds := make([]valkey.Completed, len(keys))
+	for i, key := range keys {
+		cmds[i] = client.B().Expire().Key(key).Seconds(0).Build()
+	}
+	res := client.DoMulti(ctx, cmds...)
+	for _, res := range res {
+		res.Error()
+		if res.Error() != nil {
+			return res.Error()
+		}
+	}
+	return nil
+}
+
 func (c *Cache) UseCache() bool {
 	return c.config.UseCache
 }
 
 func connect(host string, port int) (valkey.Client, error) {
-	options := valkey.ClientOption{}
+	options := valkey.ClientOption{
+		DisableAutoPipelining: true,
+	}
 	options.InitAddress = []string{host + ":" + strconv.Itoa(port)}
 	return valkey.NewClient(options)
 }
